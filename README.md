@@ -1,93 +1,123 @@
-#!/usr/bin/env bash
-# ────────────────────────────────────────────────────────────────────────────
-#  Channel Monitor — One-Click Install & Run
-#  Usage:  bash install.sh
-# ────────────────────────────────────────────────────────────────────────────
-set -e
+# 📡 Channel Monitor — Standalone
 
-BOLD="\033[1m"
-GREEN="\033[0;32m"
-CYAN="\033[0;36m"
-YELLOW="\033[0;33m"
-RED="\033[0;31m"
-RESET="\033[0m"
+A self-contained web app for monitoring Telegram channels with **auto-translation**, **media download**, and a **live log UI**.
 
-print_header() {
-  echo ""
-  echo -e "${CYAN}${BOLD}════════════════════════════════════════${RESET}"
-  echo -e "${CYAN}${BOLD}   📡  Channel Monitor  ·  Installer    ${RESET}"
-  echo -e "${CYAN}${BOLD}════════════════════════════════════════${RESET}"
-  echo ""
-}
+## ✨ Features
 
-step() { echo -e "${GREEN}[+]${RESET} ${BOLD}$1${RESET}"; }
-info() { echo -e "${CYAN}[i]${RESET} $1"; }
-warn() { echo -e "${YELLOW}[!]${RESET} $1"; }
-fail() { echo -e "${RED}[✗]${RESET} ${BOLD}$1${RESET}"; exit 1; }
+- 🌐 Auto-translates messages to English (Farsi, Russian, Chinese, Arabic, Korean, Ukrainian + more)
+- 📸 Downloads photos and videos from channels
+- 🔗 Preserves message formatting (bold, links, mentions, hashtags)
+- 📊 Language breakdown stats per channel
+- 💾 Exports results as a self-contained ZIP (HTML + JSON + media)
+- 🖥️ Live log streaming in the browser
+- ⚡ Multiple concurrent scan jobs
+- 🗂️ Full job history with download/delete
 
-print_header
+---
 
-# ── 1. Check Python ──────────────────────────────────────────────────────────
-step "Checking Python version..."
-if ! command -v python3 &>/dev/null; then
-  fail "Python 3 is not installed. Please install Python 3.10+ and re-run."
-fi
+## 🚀 One-Click Install
 
-PY_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-PY_MAJOR=$(echo "$PY_VERSION" | cut -d. -f1)
-PY_MINOR=$(echo "$PY_VERSION" | cut -d. -f2)
+```bash
+# Clone the repo
+git clone https://github.com/YOUR_USERNAME/channel-monitor.git
+cd channel-monitor
 
-if [ "$PY_MAJOR" -lt 3 ] || ([ "$PY_MAJOR" -eq 3 ] && [ "$PY_MINOR" -lt 10 ]); then
-  fail "Python 3.10+ required. Found: $PY_VERSION"
-fi
+# Install + configure
+bash install.sh
 
-info "Found Python $PY_VERSION ✓"
+# Run
+bash run.sh
+```
 
-# ── 2. Create virtualenv ─────────────────────────────────────────────────────
-step "Creating virtual environment..."
-if [ ! -d ".venv" ]; then
-  python3 -m venv .venv
-  info "Virtual environment created in .venv/"
-else
-  info "Virtual environment already exists — skipping"
-fi
+Then open **http://localhost:5000** in your browser.
 
-# ── 3. Install dependencies ──────────────────────────────────────────────────
-step "Installing dependencies..."
-.venv/bin/pip install --upgrade pip -q
-.venv/bin/pip install -r requirements.txt -q
-info "All packages installed ✓"
+---
 
-# ── 4. Set up .env ───────────────────────────────────────────────────────────
-step "Configuring environment..."
-if [ ! -f ".env" ]; then
-  cp .env.example .env
-  warn ".env file created from template."
-  echo ""
-  echo -e "  ${BOLD}You must edit .env with your Telegram credentials before running:${RESET}"
-  echo -e "  ${CYAN}  TELEGRAM_API_ID   ${RESET}→ from https://my.telegram.org"
-  echo -e "  ${CYAN}  TELEGRAM_API_HASH ${RESET}→ from https://my.telegram.org"
-  echo -e "  ${CYAN}  TELEGRAM_PHONE    ${RESET}→ your phone number (e.g. +15551234567)"
-  echo ""
+## ⚙️ Manual Setup
 
-  # Try to open editor
-  if command -v nano &>/dev/null; then
-    read -rp "  Open .env in nano now? [Y/n] " EDIT
-    EDIT="${EDIT:-Y}"
-    if [[ "$EDIT" =~ ^[Yy]$ ]]; then
-      nano .env
-    fi
-  else
-    info "Edit .env manually, then run:  bash run.sh"
-  fi
-else
-  info ".env already exists — keeping existing configuration"
-fi
+### 1. Get Telegram API credentials
 
-# ── 5. Done ──────────────────────────────────────────────────────────────────
-echo ""
-echo -e "${GREEN}${BOLD}✓ Installation complete!${RESET}"
-echo ""
-echo -e "  To start the app:   ${CYAN}${BOLD}bash run.sh${RESET}"
-echo -e "  Then open:          ${CYAN}${BOLD}http://localhost:5000${RESET}"
-echo ""
+1. Go to [https://my.telegram.org](https://my.telegram.org)
+2. Log in with your phone number
+3. Click **API development tools**
+4. Create a new application → copy `api_id` and `api_hash`
+
+### 2. Configure `.env`
+
+```bash
+cp .env.example .env
+nano .env
+```
+
+Fill in:
+```
+TELEGRAM_API_ID=12345678
+TELEGRAM_API_HASH=abcdef1234567890abcdef1234567890
+TELEGRAM_PHONE=+15551234567
+```
+
+### 3. Install dependencies
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+### 4. Run
+
+```bash
+python app.py
+```
+
+Open **http://localhost:5000**
+
+---
+
+## 📖 Usage
+
+1. Enter a channel username (e.g. `irna_1931`) or full link (e.g. `t.me/channel`)
+2. Set your options:
+   - **Message Limit** — how many messages to fetch (0 = all)
+   - **Days Back** — only fetch messages from the last N days
+   - **Force Language** — skip auto-detect and use a specific source language
+   - **Max Video Size** — skip videos above this MB threshold
+   - **Min Free Disk** — stop if disk space drops below this
+   - **Skip English** — don't re-translate already-English messages
+3. Click **▶ Start Scan**
+4. Watch the live log; click **⬇ Download** when done
+
+The ZIP contains:
+- `messages.html` — self-contained readable report with translations
+- `messages.json` — raw data with all fields
+- `media/` — downloaded photos and videos
+
+---
+
+## 🔧 Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `TELEGRAM_API_ID` | — | Required. From my.telegram.org |
+| `TELEGRAM_API_HASH` | — | Required. From my.telegram.org |
+| `TELEGRAM_PHONE` | — | Required. Your phone number |
+| `PORT` | `5000` | Web server port |
+| `DATA_DIR` | `data` | Where jobs and session files are stored |
+| `SECRET_KEY` | random | Flask session secret |
+
+---
+
+## 📦 Dependencies
+
+- [Telethon](https://github.com/LonamiWebs/Telethon) — Telegram MTProto client
+- [deep-translator](https://github.com/nidhaloff/deep-translator) — Google Translate wrapper
+- [langdetect](https://github.com/Mimino666/langdetect) — Language detection
+- [Flask](https://flask.palletsprojects.com/) — Web framework
+
+---
+
+## 📝 Notes
+
+- On first run, Telegram will send a verification code to your phone/app. Enter it in the terminal.
+- The session is saved to `data/channel_monitor.session` — keep this file private.
+- All job output is stored in `data/jobs/` and can be downloaded as a ZIP via the UI.
