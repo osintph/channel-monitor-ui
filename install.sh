@@ -115,7 +115,7 @@ import os, asyncio
 from dotenv import load_dotenv
 from telethon import TelegramClient
 
-load_dotenv()
+load_dotenv(dotenv_path=os.path.join(os.getcwd(), ".env"))
 
 api_id   = os.getenv("TELEGRAM_API_ID")
 api_hash = os.getenv("TELEGRAM_API_HASH")
