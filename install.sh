@@ -110,7 +110,7 @@ else
   info "Enter it when prompted below."
   echo ""
 
-  .venv/bin/python3 - << 'PYEOF'
+  cat > /tmp/_cm_auth.py << 'PYEOF'
 import os, asyncio
 from dotenv import load_dotenv
 from telethon import TelegramClient
@@ -130,6 +130,8 @@ async def auth():
 
 asyncio.run(auth())
 PYEOF
+  .venv/bin/python3 /tmp/_cm_auth.py
+  rm -f /tmp/_cm_auth.py
 fi
 
 # ── 7. Done ──────────────────────────────────────────────────────────────────
