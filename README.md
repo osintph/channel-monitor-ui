@@ -1,123 +1,178 @@
-# 📡 Channel Monitor — Standalone
+# 📡 Channel Monitor
 
-A self-contained web app for monitoring Telegram channels with **auto-translation**, **media download**, and a **live log UI**.
+A standalone web app for monitoring Telegram channels with **auto-translation to English**, **media download**, and a **live log UI**.
+
+Built by [@osintph](https://github.com/osintph)
+
+---
 
 ## ✨ Features
 
 - 🌐 Auto-translates messages to English (Farsi, Russian, Chinese, Arabic, Korean, Ukrainian + more)
 - 📸 Downloads photos and videos from channels
 - 🔗 Preserves message formatting (bold, links, mentions, hashtags)
-- 📊 Language breakdown stats per channel
-- 💾 Exports results as a self-contained ZIP (HTML + JSON + media)
+- 📊 Language breakdown stats per scan
+- 💾 Exports results as a ZIP (HTML report + JSON + media files)
 - 🖥️ Live log streaming in the browser
 - ⚡ Multiple concurrent scan jobs
-- 🗂️ Full job history with download/delete
+- 🗂️ Full job history — persists across restarts
+- 🔁 Runs as a background systemd service
 
 ---
 
-## 🚀 One-Click Install
+## 🚀 Installation
 
-```bash
-# Clone the repo
-git clone https://github.com/YOUR_USERNAME/channel-monitor.git
-cd channel-monitor
+### Step 1 — Get Telegram API credentials
 
-# Install + configure
-bash install.sh
+Before anything else, you need API credentials from Telegram:
 
-# Run
-bash run.sh
-```
-
-Then open **http://localhost:5000** in your browser.
-
----
-
-## ⚙️ Manual Setup
-
-### 1. Get Telegram API credentials
-
-1. Go to [https://my.telegram.org](https://my.telegram.org)
+1. Go to **https://my.telegram.org**
 2. Log in with your phone number
 3. Click **API development tools**
-4. Create a new application → copy `api_id` and `api_hash`
+4. Create a new application
+5. Copy your **`api_id`** and **`api_hash`**
 
-### 2. Configure `.env`
+### Step 2 — Clone the repo
+
+```bash
+git clone https://github.com/osintph/channel-monitor-ui.git
+cd channel-monitor-ui
+```
+
+### Step 3 — Configure your credentials
+
+Copy the example env file and fill in your details **before running the installer**:
 
 ```bash
 cp .env.example .env
 nano .env
 ```
 
-Fill in:
-```
+Fill in all three required fields:
+
+```env
 TELEGRAM_API_ID=12345678
 TELEGRAM_API_HASH=abcdef1234567890abcdef1234567890
 TELEGRAM_PHONE=+15551234567
 ```
 
-### 3. Install dependencies
+Save and exit (`Ctrl+X` → `Y` → `Enter`).
+
+> ⚠️ The installer will hard-stop if these are not filled in. You must complete this step before running `install.sh`.
+
+### Step 4 — Run the installer
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+bash install.sh
 ```
 
-### 4. Run
+The installer will:
+1. Check Python version (3.10+ required)
+2. Create a virtual environment in `.venv/`
+3. Install all Python dependencies
+4. Validate your `.env` credentials
+5. Authenticate with Telegram — **Telegram will send a login code to your phone or app, enter it when prompted**
+
+The session is saved to `data/channel_monitor.session` and reused on every future run — you will not need to authenticate again unless you delete the session file.
+
+### Step 5 — Run
+
+**Option A — Run manually in the foreground:**
+```bash
+bash run.sh
+```
+
+**Option B — Install as a background service (recommended):**
+```bash
+sudo bash install-service.sh
+```
+
+The service starts automatically on boot and runs in the background using Gunicorn.
+
+Then open your browser at:
+- **http://localhost:5000**
+- **http://YOUR-HOSTNAME:5000**
+- **http://YOUR-IP:5000**
+
+---
+
+## 🔧 Managing the service
 
 ```bash
-python app.py
+sudo systemctl status channel-monitor     # check if running
+sudo systemctl restart channel-monitor    # restart
+sudo systemctl stop channel-monitor       # stop
+sudo systemctl start channel-monitor      # start
+sudo journalctl -u channel-monitor -f     # live logs
 ```
 
-Open **http://localhost:5000**
+---
+
+## ⚙️ Configuration
+
+All settings live in `.env`:
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `TELEGRAM_API_ID` | ✅ | — | From my.telegram.org |
+| `TELEGRAM_API_HASH` | ✅ | — | From my.telegram.org |
+| `TELEGRAM_PHONE` | ✅ | — | Your phone number e.g. +15551234567 |
+| `PORT` | No | `5000` | Web server port |
+| `DATA_DIR` | No | `data` | Where jobs and session files are stored |
+| `SECRET_KEY` | No | random | Flask session secret |
 
 ---
 
 ## 📖 Usage
 
-1. Enter a channel username (e.g. `irna_1931`) or full link (e.g. `t.me/channel`)
-2. Set your options:
-   - **Message Limit** — how many messages to fetch (0 = all)
-   - **Days Back** — only fetch messages from the last N days
-   - **Force Language** — skip auto-detect and use a specific source language
-   - **Max Video Size** — skip videos above this MB threshold
-   - **Min Free Disk** — stop if disk space drops below this
-   - **Skip English** — don't re-translate already-English messages
+1. Enter a channel username (e.g. `farsna`) or full link (e.g. `t.me/farsna`)
+2. Configure scan options:
+   - **Message Limit** — number of messages to fetch (0 = all)
+   - **Days Back** — only fetch messages from the last N days (leave blank for all)
+   - **Force Language** — skip auto-detect and force a specific source language
+   - **Max Video Size (MB)** — skip videos larger than this (0 = skip all videos)
+   - **Min Free Disk (GB)** — stop downloading if disk space drops below this
+   - **Skip translation if already English** — avoids unnecessary API calls
 3. Click **▶ Start Scan**
-4. Watch the live log; click **⬇ Download** when done
+4. Watch the live log in real time
+5. Click **⬇ ZIP** to download results when complete
 
-The ZIP contains:
-- `messages.html` — self-contained readable report with translations
-- `messages.json` — raw data with all fields
-- `media/` — downloaded photos and videos
+### What's in the ZIP
+
+| File | Description |
+|---|---|
+| `messages.html` | Self-contained report — original text, English translation, inline photos/videos |
+| `messages.json` | Raw data with all fields |
+| `media/` | Downloaded photos and videos |
 
 ---
 
-## 🔧 Configuration
+## 🔄 Re-authenticating Telegram
 
-| Variable | Default | Description |
-|---|---|---|
-| `TELEGRAM_API_ID` | — | Required. From my.telegram.org |
-| `TELEGRAM_API_HASH` | — | Required. From my.telegram.org |
-| `TELEGRAM_PHONE` | — | Required. Your phone number |
-| `PORT` | `5000` | Web server port |
-| `DATA_DIR` | `data` | Where jobs and session files are stored |
-| `SECRET_KEY` | random | Flask session secret |
+If you need to log in again (e.g. session expired or phone changed):
+
+```bash
+rm data/channel_monitor.session
+bash install.sh
+```
 
 ---
 
 ## 📦 Dependencies
 
-- [Telethon](https://github.com/LonamiWebs/Telethon) — Telegram MTProto client
-- [deep-translator](https://github.com/nidhaloff/deep-translator) — Google Translate wrapper
-- [langdetect](https://github.com/Mimino666/langdetect) — Language detection
-- [Flask](https://flask.palletsprojects.com/) — Web framework
+| Package | Purpose |
+|---|---|
+| [Telethon](https://github.com/LonamiWebs/Telethon) | Telegram MTProto client |
+| [deep-translator](https://github.com/nidhaloff/deep-translator) | Google Translate wrapper |
+| [langdetect](https://github.com/Mimino666/langdetect) | Automatic language detection |
+| [Flask](https://flask.palletsprojects.com/) | Web framework |
+| [Gunicorn](https://gunicorn.org/) | Production WSGI server |
 
 ---
 
 ## 📝 Notes
 
-- On first run, Telegram will send a verification code to your phone/app. Enter it in the terminal.
-- The session is saved to `data/channel_monitor.session` — keep this file private.
-- All job output is stored in `data/jobs/` and can be downloaded as a ZIP via the UI.
+- `data/channel_monitor.session` grants access to your Telegram account — keep it private and never commit it to git
+- `data/` is in `.gitignore` and will never be committed
+- Job history persists across service restarts in `data/jobs_index.json`
+- The service runs with a single Gunicorn worker to avoid Telegram session conflicts
