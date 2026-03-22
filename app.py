@@ -18,7 +18,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from flask import (
     Flask, Response, jsonify, render_template,
-    request, send_from_directory, stream_with_context
+    request, send_from_directory
 )
 
 load_dotenv()
@@ -31,9 +31,48 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 SESSION_FILE = DATA_DIR / "channel_monitor"
 
-# ── In-memory job store ───────────────────────────────────────────────────────
+# ── Persistent job store ─────────────────────────────────────────────────────
 _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
+JOBS_INDEX = DATA_DIR / "jobs_index.json"
+
+
+def _save_jobs_index():
+    """Persist job metadata to disk (excludes live log to keep it fast)."""
+    try:
+        snapshot = {}
+        for jid, j in _jobs.items():
+            snapshot[jid] = {
+                "status":     j["status"],
+                "config":     j["config"],
+                "output_dir": j["output_dir"],
+                "started_at": j["started_at"],
+                "ended_at":   j.get("ended_at"),
+                "error":      j.get("error"),
+                "log":        j.get("log", []),
+            }
+        with open(JOBS_INDEX, "w") as f:
+            json.dump(snapshot, f, indent=2)
+    except Exception:
+        pass
+
+
+def _load_jobs_index():
+    """Load persisted jobs on startup."""
+    if not JOBS_INDEX.exists():
+        return
+    try:
+        with open(JOBS_INDEX) as f:
+            snapshot = json.load(f)
+        for jid, j in snapshot.items():
+            # Mark any 'running' jobs as error — they died with the process
+            if j["status"] == "running":
+                j["status"] = "error"
+                j["error"] = "Process restarted while job was running"
+                j["ended_at"] = j["ended_at"] or datetime.utcnow().isoformat()
+            _jobs[jid] = j
+    except Exception:
+        pass
 
 
 def _new_job_id() -> str:
@@ -46,6 +85,10 @@ def _get_telegram_creds() -> dict:
         "api_hash": os.getenv("TELEGRAM_API_HASH", ""),
         "phone":    os.getenv("TELEGRAM_PHONE", ""),
     }
+
+
+# Load persisted jobs on startup
+_load_jobs_index()
 
 
 # ── Core channel monitor logic (inlined from channel_monitor.py) ──────────────
@@ -439,6 +482,7 @@ def api_credentials():
 
 @app.route("/api/jobs", methods=["GET"])
 def api_jobs_list():
+    _load_jobs_index()  # always reload from disk so all workers see same state
     with _jobs_lock:
         jobs = []
         for jid, j in _jobs.items():
@@ -475,6 +519,7 @@ def api_job_get(job_id):
 
 @app.route("/api/jobs/<job_id>/log", methods=["GET"])
 def api_job_log(job_id):
+    _load_jobs_index()
     since = int(request.args.get("since", 0))
     with _jobs_lock:
         j = _jobs.get(job_id)
@@ -489,6 +534,7 @@ def api_job_log(job_id):
 
 @app.route("/api/jobs/<job_id>/download", methods=["GET"])
 def api_job_download(job_id):
+    _load_jobs_index()
     with _jobs_lock:
         j = _jobs.get(job_id)
     if not j:
@@ -505,25 +551,17 @@ def api_job_download(job_id):
     zip_filename = f"channel_monitor_{channel}_{ts}.zip"
     files = sorted([f for f in output_dir.rglob("*") if f.is_file()])
 
-    def generate():
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as zf:
-            for fpath in files:
-                arcname = str(fpath.relative_to(output_dir.parent))
-                zf.write(fpath, arcname)
-                buf.seek(0)
-                chunk = buf.read()
-                buf.seek(0)
-                buf.truncate(0)
-                if chunk:
-                    yield chunk
-        buf.seek(0)
-        remaining = buf.read()
-        if remaining:
-            yield remaining
+    # Build the full ZIP in memory then send it in one shot.
+    # The incremental streaming approach corrupts the ZIP central directory.
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for fpath in files:
+            arcname = str(fpath.relative_to(output_dir))
+            zf.write(fpath, arcname)
+    buf.seek(0)
 
     return Response(
-        stream_with_context(generate()),
+        buf.read(),
         mimetype="application/zip",
         headers={"Content-Disposition": f"attachment; filename={zip_filename}"},
     )
@@ -540,6 +578,7 @@ def api_job_delete(job_id):
             shutil.rmtree(j["output_dir"], ignore_errors=True)
     except Exception:
         pass
+    _save_jobs_index()
     return jsonify({"ok": True})
 
 
@@ -641,6 +680,7 @@ async def _run_job(job_id, config, output_dir, creds):
         with _jobs_lock:
             _jobs[job_id]["status"] = "completed"
         log("[✓] Done. Click Download to get your results.")
+        _save_jobs_index()
     except Exception as e:
         log(f"[✗] Error: {e}")
         log(traceback.format_exc())
@@ -650,6 +690,7 @@ async def _run_job(job_id, config, output_dir, creds):
     finally:
         with _jobs_lock:
             _jobs[job_id]["ended_at"] = datetime.utcnow().isoformat()
+        _save_jobs_index()
         try:
             await client.disconnect()
         except Exception:

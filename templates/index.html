@@ -344,7 +344,7 @@
       <div class="card" style="flex:0 0 auto">
         <div class="section-header">
           <h2>Jobs</h2>
-          <button class="btn btn-ghost" style="font-size:0.78rem;padding:5px 12px" onclick="loadJobs()">⟳ Refresh</button>
+          <button class="btn btn-ghost" style="font-size:0.78rem;padding:5px 12px" onclick="cmLoadJobs()">⟳ Refresh</button>
         </div>
         <div id="jobs-list">
           <div class="empty-state"><div class="icon">📭</div>No jobs yet. Start a scan above.</div>
@@ -352,30 +352,33 @@
       </div>
 
       <div class="card" style="flex:1">
-        <h2>Live Log</h2>
-        <div id="log-pane">
+        <div class="section-header">
+          <h2>Live Log</h2>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span id="cmStatusBadge" class="badge badge-running" style="display:none"></span>
+            <button id="cmDownloadBtn" class="btn btn-success" style="display:none;font-size:0.78rem;padding:5px 14px" onclick="cmDownloadActive()">⬇ Download</button>
+          </div>
+        </div>
+        <div id="cmLogBox" class="log-pane">
           <div class="log-placeholder">Select a job to view its log</div>
         </div>
       </div>
-
     </div>
   </div>
 </div>
 
 <script>
-  let activeJobId = null;
-  let pollTimer = null;
-  let logOffset = 0;
+  let _cmActiveJobId = null;
+  let _cmPollTimer   = null;
+  let _cmLogOffset   = 0;
 
-  // ── Credentials check ──────────────────────────────────────────────────────
-  async function checkCreds() {
+  async function cmInit() {
     try {
-      const r = await fetch('/api/credentials');
-      const d = await r.json();
-      const dot   = document.getElementById('cred-dot');
-      const label = document.getElementById('cred-label');
-      const banner= document.getElementById('cred-banner');
-      if (d.configured) {
+      const creds = await (await fetch('/api/credentials')).json();
+      const dot    = document.getElementById('cred-dot');
+      const label  = document.getElementById('cred-label');
+      const banner = document.getElementById('cred-banner');
+      if (creds.configured) {
         dot.className = 'ok';
         label.textContent = 'Telegram connected';
         banner.style.display = 'none';
@@ -386,167 +389,172 @@
         document.getElementById('btn-start').disabled = true;
       }
     } catch(e) {}
+    cmLoadJobs();
   }
 
-  // ── Start scan ─────────────────────────────────────────────────────────────
   async function startScan() {
     const channel = document.getElementById('f-channel').value.trim().replace(/^@/, '');
-    if (!channel) {
-      alert('Please enter a channel username.');
-      return;
-    }
-
+    if (!channel) { alert('Channel name is required'); return; }
     const body = {
-      channel:      channel,
+      channel,
       limit:        parseInt(document.getElementById('f-limit').value) || 200,
-      days:         parseInt(document.getElementById('f-days').value) || null,
+      days:         document.getElementById('f-days').value ? parseInt(document.getElementById('f-days').value) : null,
       lang:         document.getElementById('f-lang').value || null,
       max_video_mb: parseInt(document.getElementById('f-maxvideo').value) || 50,
       min_space_gb: parseFloat(document.getElementById('f-diskspace').value) || 1.0,
       skip_english: document.getElementById('f-skipen').checked,
     };
-
     const btn = document.getElementById('btn-start');
     btn.disabled = true;
     btn.textContent = '⏳ Starting…';
-
     try {
-      const r = await fetch('/api/start', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(body),
-      });
-      const d = await r.json();
-
-      if (d.error) {
-        alert('Error: ' + d.error);
-      } else {
-        await loadJobs();
-        selectJob(d.job_id);
-      }
+      const res  = await fetch('/api/start', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+      const data = await res.json();
+      if (!res.ok || !data.ok) { alert(data.error || 'Failed to start'); return; }
+      _cmActiveJobId = data.job_id;
+      _cmLogOffset   = 0;
+      document.getElementById('cmLogBox').innerHTML = '';
+      document.getElementById('cmDownloadBtn').style.display = 'none';
+      document.getElementById('cmStatusBadge').textContent = 'Running';
+      document.getElementById('cmStatusBadge').className = 'badge badge-running';
+      cmPollLog();
+      cmLoadJobs();
     } catch(e) {
-      alert('Network error: ' + e);
+      alert('Network error: ' + e.message);
     } finally {
       btn.disabled = false;
       btn.textContent = '▶ Start Scan';
     }
   }
 
-  // ── Load jobs ──────────────────────────────────────────────────────────────
-  async function loadJobs() {
-    const r = await fetch('/api/jobs');
-    const jobs = await r.json();
-    renderJobs(jobs);
+  function cmPollLog() {
+    if (_cmPollTimer) clearInterval(_cmPollTimer);
+    _cmPollTimer = setInterval(async () => {
+      if (!_cmActiveJobId) return;
+      try {
+        const data = await (await fetch(`/api/jobs/${_cmActiveJobId}/log?since=${_cmLogOffset}`)).json();
+        if (data.log && data.log.length) {
+          const box = document.getElementById('cmLogBox');
+          data.log.forEach(line => {
+            const div = document.createElement('div');
+            div.className = 'log-line ' + classifyLine(line);
+            div.textContent = line;
+            box.appendChild(div);
+          });
+          box.scrollTop = box.scrollHeight;
+          _cmLogOffset = data.total;
+        }
+        if (data.status === 'completed' || data.status === 'error') {
+          clearInterval(_cmPollTimer);
+          _cmPollTimer = null;
+          cmFinishJob(data.status);
+          cmLoadJobs();
+        }
+      } catch(e) {}
+    }, 1500);
   }
 
-  function renderJobs(jobs) {
-    const el = document.getElementById('jobs-list');
-    if (!jobs.length) {
-      el.innerHTML = '<div class="empty-state"><div class="icon">📭</div>No jobs yet. Start a scan above.</div>';
-      return;
+  function cmFinishJob(status) {
+    const badge = document.getElementById('cmStatusBadge');
+    const dlBtn = document.getElementById('cmDownloadBtn');
+    if (status === 'completed') {
+      badge.textContent = '✓ Completed';
+      badge.className = 'badge badge-completed';
+    } else {
+      badge.textContent = '✗ Error';
+      badge.className = 'badge badge-error';
     }
-
-    el.innerHTML = jobs.map(j => {
-      const isActive = j.id === activeJobId;
-      const startTime = j.started_at ? new Date(j.started_at).toLocaleString() : '';
-      const duration  = j.ended_at
-        ? ((new Date(j.ended_at) - new Date(j.started_at)) / 1000).toFixed(0) + 's'
-        : j.status === 'running' ? 'running…' : '';
-
-      const badge = `<span class="badge badge-${j.status}">${j.status}</span>`;
-      const dlBtn = j.status !== 'running'
-        ? `<a href="/api/jobs/${j.id}/download" class="btn btn-success" style="font-size:0.75rem;padding:5px 10px">⬇ Download</a>`
-        : '';
-      const delBtn = `<button class="btn btn-danger" style="font-size:0.75rem;padding:5px 10px" onclick="deleteJob('${j.id}',event)">🗑</button>`;
-
-      return `
-        <div class="job-card ${isActive ? 'active' : ''}" onclick="selectJob('${j.id}')">
-          <div class="job-header">
-            <span class="job-channel">@${j.channel}</span>
-            ${badge}
-          </div>
-          <div class="job-meta-row">
-            <span>🕐 ${startTime}</span>
-            <span>⏱ ${duration}</span>
-            <span>📝 ${j.log_lines} lines</span>
-          </div>
-          <div class="job-actions">
-            ${dlBtn}
-            ${delBtn}
-          </div>
-        </div>`;
-    }).join('');
+    dlBtn.style.display = 'inline-block';
   }
 
-  // ── Select & watch job ─────────────────────────────────────────────────────
-  function selectJob(jobId) {
-    activeJobId = jobId;
-    logOffset = 0;
-    document.getElementById('log-pane').innerHTML = '<div class="log-placeholder">Loading log…</div>';
-    clearInterval(pollTimer);
-    pollLog();
-    pollTimer = setInterval(pollLog, 1500);
-    loadJobs(); // refresh card highlights
+  function cmDownloadActive() {
+    if (_cmActiveJobId) window.location.href = `/api/jobs/${_cmActiveJobId}/download`;
   }
 
-  async function pollLog() {
-    if (!activeJobId) return;
+  async function cmLoadJobs() {
     try {
-      const r = await fetch(`/api/jobs/${activeJobId}/log?since=${logOffset}`);
-      const d = await r.json();
-
-      if (d.error) return;
-
-      const pane = document.getElementById('log-pane');
-      if (logOffset === 0) pane.innerHTML = '';
-
-      const frag = document.createDocumentFragment();
-      for (const line of d.log) {
-        const div = document.createElement('div');
-        div.className = 'log-line ' + classifyLine(line);
-        div.textContent = line;
-        frag.appendChild(div);
+      const jobs = await (await fetch('/api/jobs')).json();
+      const el = document.getElementById('jobs-list');
+      if (!jobs.length) {
+        el.innerHTML = '<div class="empty-state"><div class="icon">📭</div>No jobs yet. Start a scan above.</div>';
+        return;
       }
-      pane.appendChild(frag);
-      pane.scrollTop = pane.scrollHeight;
-      logOffset = d.total;
-
-      if (d.status !== 'running') {
-        clearInterval(pollTimer);
-        loadJobs();
-      }
+      el.innerHTML = jobs.map(j => {
+        const startTime = j.started_at ? new Date(j.started_at).toLocaleString() : '—';
+        const duration  = j.ended_at
+          ? ((new Date(j.ended_at) - new Date(j.started_at)) / 1000).toFixed(0) + 's'
+          : j.status === 'running' ? 'running…' : '';
+        const badge = j.status === 'completed'
+          ? '<span class="badge badge-completed">✓ Completed</span>'
+          : j.status === 'running'
+          ? '<span class="badge badge-running">⏳ Running</span>'
+          : '<span class="badge badge-error">✗ Error</span>';
+        const dlBtn  = (j.status === 'completed' || j.status === 'error')
+          ? `<a href="/api/jobs/${j.id}/download" class="btn btn-success" style="font-size:0.75rem;padding:5px 10px">⬇ ZIP</a>`
+          : '';
+        const logBtn = `<button class="btn btn-ghost" style="font-size:0.75rem;padding:5px 10px" onclick="cmViewJob('${j.id}')">📋 Log</button>`;
+        const delBtn = j.status !== 'running'
+          ? `<button class="btn btn-danger" style="font-size:0.75rem;padding:5px 10px" onclick="cmDeleteJob('${j.id}')">🗑</button>`
+          : '';
+        return `
+          <div class="job-card ${j.id === _cmActiveJobId ? 'active' : ''}">
+            <div class="job-header">
+              <span class="job-channel">@${j.channel}</span>
+              ${badge}
+            </div>
+            <div class="job-meta-row">
+              <span>🕐 ${startTime}</span>
+              <span>⏱ ${duration}</span>
+              <span>📝 ${j.log_lines} lines</span>
+            </div>
+            <div class="job-actions">${logBtn}${dlBtn}${delBtn}</div>
+          </div>`;
+      }).join('');
     } catch(e) {}
   }
 
+  async function cmViewJob(jobId) {
+    try {
+      const data = await (await fetch(`/api/jobs/${jobId}`)).json();
+      _cmActiveJobId = jobId;
+      _cmLogOffset   = data.log.length;
+      const box = document.getElementById('cmLogBox');
+      box.innerHTML = '';
+      data.log.forEach(line => {
+        const div = document.createElement('div');
+        div.className = 'log-line ' + classifyLine(line);
+        div.textContent = line;
+        box.appendChild(div);
+      });
+      box.scrollTop = box.scrollHeight;
+      cmFinishJob(data.status);
+      if (data.status === 'running') cmPollLog();
+    } catch(e) { alert('Could not load job'); }
+  }
+
+  async function cmDeleteJob(jobId) {
+    if (!confirm('Delete this job and its output files?')) return;
+    await fetch(`/api/jobs/${jobId}`, {method:'DELETE'});
+    if (_cmActiveJobId === jobId) {
+      _cmActiveJobId = null;
+      if (_cmPollTimer) { clearInterval(_cmPollTimer); _cmPollTimer = null; }
+      document.getElementById('cmLogBox').innerHTML = '<div class="log-placeholder">Select a job to view its log</div>';
+      document.getElementById('cmDownloadBtn').style.display = 'none';
+      document.getElementById('cmStatusBadge').textContent = '';
+    }
+    cmLoadJobs();
+  }
+
   function classifyLine(line) {
-    if (line.startsWith('[✓]') || line.includes('completed') || line.includes('saved'))
-      return 'log-ok';
-    if (line.startsWith('[✗]') || line.startsWith('[!]') || line.includes('error') || line.includes('Error'))
-      return 'log-err';
-    if (line.startsWith('[i]') || line.startsWith('[+]'))
-      return 'log-info';
-    if (line.startsWith('[~]') || line.startsWith('[MSG'))
-      return 'log-warn';
+    if (line.startsWith('[✓]') || line.includes('complete') || line.includes('saved')) return 'log-ok';
+    if (line.startsWith('[✗]') || line.startsWith('[!]') || line.toLowerCase().includes('error')) return 'log-err';
+    if (line.startsWith('[i]') || line.startsWith('[+]')) return 'log-info';
+    if (line.startsWith('[~]') || line.startsWith('[MSG')) return 'log-warn';
     return '';
   }
 
-  // ── Delete job ─────────────────────────────────────────────────────────────
-  async function deleteJob(jobId, e) {
-    e.stopPropagation();
-    if (!confirm('Delete this job and its output?')) return;
-    await fetch(`/api/jobs/${jobId}`, { method: 'DELETE' });
-    if (activeJobId === jobId) {
-      activeJobId = null;
-      clearInterval(pollTimer);
-      document.getElementById('log-pane').innerHTML = '<div class="log-placeholder">Select a job to view its log</div>';
-    }
-    loadJobs();
-  }
-
-  // ── Init ───────────────────────────────────────────────────────────────────
-  checkCreds();
-  loadJobs();
-  setInterval(loadJobs, 10000);
+  cmInit();
+  setInterval(cmLoadJobs, 10000);
 </script>
 </body>
 </html>
