@@ -308,9 +308,18 @@ def generate_html(messages, channel_title, output_path):
         f.write(html_content)
 
 
+def message_matches_keywords(text: str, keywords: list, translated: str = "") -> bool:
+    """Return True if any keyword appears in the original or translated text (case-insensitive)."""
+    if not keywords:
+        return True
+    haystack = (text + " " + translated).lower()
+    return any(kw.strip().lower() in haystack for kw in keywords if kw.strip())
+
+
 async def process_channel(client, channel_id, limit, output_dir,
                           days=None, min_space_gb=1.0, max_video_mb=50,
-                          forced_lang=None, skip_english=False, log_fn=None):
+                          forced_lang=None, skip_english=False, log_fn=None,
+                          keywords=None):
     from telethon.tl.types import (
         MessageMediaPhoto, MessageMediaDocument, MessageMediaWebPage
     )
@@ -340,11 +349,13 @@ async def process_channel(client, channel_id, limit, output_dir,
         log(f"[i] Fetching since: {cutoff_date.strftime('%Y-%m-%d %H:%M UTC')} ({days} days back)")
 
     lang_mode = f"forced={forced_lang}" if forced_lang else "auto-detect"
-    log(f"[+] Processing: {channel_title} | lang: {lang_mode}")
+    keyword_mode = f"keywords={keywords}" if keywords else "none"
+    log(f"[+] Processing: {channel_title} | lang: {lang_mode} | filter: {keyword_mode}")
 
     results = []
     fetch_limit = None if limit == 0 else limit
     lang_stats = {}
+    skipped_keyword = 0
 
     async for message in client.iter_messages(channel, limit=fetch_limit):
         if cutoff_date and message.date < cutoff_date:
@@ -387,7 +398,16 @@ async def process_channel(client, channel_id, limit, output_dir,
             else:
                 entry["translated_en"] = translate_text(message.text, lang)
 
+            # ── Keyword filter ──────────────────────────────────────────────
+            if keywords and not message_matches_keywords(message.text, keywords, entry["translated_en"]):
+                skipped_keyword += 1
+                continue
+
         if message.media:
+            # If keyword filter is active and this message has no text, skip it
+            if keywords and not message.text:
+                skipped_keyword += 1
+                continue
             if isinstance(message.media, MessageMediaPhoto):
                 entry["media_type"] = "photo"
                 try:
@@ -452,6 +472,8 @@ async def process_channel(client, channel_id, limit, output_dir,
     generate_html(results, channel_title, html_path)
 
     log(f"[✓] {len(results)} messages saved → {channel_dir}/")
+    if keywords:
+        log(f"[i] Keyword filter: {skipped_keyword} messages skipped (did not match: {', '.join(keywords)})")
     if lang_stats:
         log("[i] Language breakdown:")
         for lang, count in sorted(lang_stats.items(), key=lambda x: -x[1]):
@@ -494,6 +516,7 @@ def api_jobs_list():
                 "ended_at":   j.get("ended_at"),
                 "log_lines":  len(j["log"]),
                 "error":      j.get("error"),
+                "keywords":   j["config"].get("keywords"),
             })
         jobs.sort(key=lambda x: x["started_at"], reverse=True)
     return jsonify(jobs)
@@ -602,6 +625,7 @@ def api_start():
         "max_video_mb": int(body.get("max_video_mb", 50)),
         "min_space_gb": float(body.get("min_space_gb", 1.0)),
         "skip_english": bool(body.get("skip_english", False)),
+        "keywords":     [k.strip() for k in (body.get("keywords") or "").split(",") if k.strip()] or None,
     }
 
     job_id = _new_job_id()
@@ -676,6 +700,7 @@ async def _run_job(job_id, config, output_dir, creds):
             forced_lang=config["lang"],
             skip_english=config["skip_english"],
             log_fn=log,
+            keywords=config.get("keywords"),
         )
         with _jobs_lock:
             _jobs[job_id]["status"] = "completed"

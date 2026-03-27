@@ -234,6 +234,91 @@
     }
     .empty-state .icon { font-size: 2.5rem; margin-bottom: 10px; }
 
+    /* ── Tabs ───────────────────────────────────── */
+    .tab-bar {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+    .tab-btn {
+      padding: 10px 20px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--muted);
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      transition: color 0.2s, border-color 0.2s;
+      margin-bottom: -1px;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Keyword tag input ──────────────────────── */
+    .keyword-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      min-height: 38px;
+      padding: 6px 8px;
+      background: #0f0f28;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      cursor: text;
+      transition: border-color 0.2s;
+      align-items: center;
+    }
+    .keyword-tags:focus-within { border-color: var(--accent); }
+    .keyword-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #1a2a4a;
+      color: var(--accent);
+      border: 1px solid #2a3a5a;
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 0.8rem;
+      font-weight: 500;
+    }
+    .keyword-tag button {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 0 2px;
+      font-size: 0.9rem;
+      line-height: 1;
+    }
+    .keyword-tag button:hover { color: var(--error); }
+    #kw-input {
+      flex: 1;
+      min-width: 100px;
+      background: none;
+      border: none;
+      color: var(--text);
+      font-size: 0.88rem;
+      outline: none;
+      padding: 2px 4px;
+    }
+    .kw-hint { font-size: 0.75rem; color: var(--muted); margin-top: 5px; }
+
+    /* ── Keyword badge on job cards ─────────────── */
+    .kw-badge {
+      display: inline-block;
+      background: #1a2a1a;
+      color: #66bb6a;
+      border: 1px solid #2a4a2a;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 0.7rem;
+      font-family: monospace;
+    }
+
     /* ── Cred banner ────────────────────────────── */
     #cred-banner {
       display: none;
@@ -280,61 +365,136 @@
 
   <div class="grid">
 
-    <!-- ── Left: New scan form ── -->
+    <!-- ── Left: Tabbed scan forms ── -->
     <div>
       <div class="card">
-        <h2>New Scan</h2>
 
-        <div class="form-group">
-          <label>Channel Username or Link</label>
-          <input id="f-channel" type="text" placeholder="e.g. irna_1931 or t.me/channel" />
+        <div class="tab-bar">
+          <button class="tab-btn active" id="tab-btn-full" onclick="switchTab('full')">📡 Full Scan</button>
+          <button class="tab-btn" id="tab-btn-keyword" onclick="switchTab('keyword')">🔍 Keyword Scan</button>
         </div>
 
-        <div class="row-2">
+        <!-- ── Full Scan tab ── -->
+        <div class="tab-panel active" id="tab-full">
           <div class="form-group">
-            <label>Message Limit</label>
-            <input id="f-limit" type="number" value="200" min="0" />
+            <label>Channel Username or Link</label>
+            <input id="f-channel" type="text" placeholder="e.g. irna_1931 or t.me/channel" />
           </div>
+
+          <div class="row-2">
+            <div class="form-group">
+              <label>Message Limit</label>
+              <input id="f-limit" type="number" value="200" min="0" />
+            </div>
+            <div class="form-group">
+              <label>Days Back (optional)</label>
+              <input id="f-days" type="number" placeholder="all time" min="1" />
+            </div>
+          </div>
+
+          <div class="row-2">
+            <div class="form-group">
+              <label>Force Language</label>
+              <select id="f-lang">
+                <option value="">Auto-detect</option>
+                <option value="fa">🇮🇷 Farsi</option>
+                <option value="ru">🇷🇺 Russian</option>
+                <option value="zh-cn">🇨🇳 Chinese (Simplified)</option>
+                <option value="zh-tw">🇹🇼 Chinese (Traditional)</option>
+                <option value="ko">🇰🇵 Korean</option>
+                <option value="ar">🇸🇦 Arabic</option>
+                <option value="uk">🇺🇦 Ukrainian</option>
+                <option value="de">🇩🇪 German</option>
+                <option value="fr">🇫🇷 French</option>
+                <option value="es">🇪🇸 Spanish</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Max Video Size (MB)</label>
+              <input id="f-maxvideo" type="number" value="50" min="0" />
+            </div>
+          </div>
+
           <div class="form-group">
-            <label>Days Back (optional)</label>
-            <input id="f-days" type="number" placeholder="all time" min="1" />
+            <label>Min Free Disk (GB)</label>
+            <input id="f-diskspace" type="number" value="1.0" step="0.5" min="0.1" />
           </div>
+
+          <div class="checkbox-row">
+            <input id="f-skipen" type="checkbox" />
+            <label for="f-skipen">Skip translation if already English</label>
+          </div>
+
+          <button class="btn btn-primary" id="btn-start" onclick="startScan()">▶ Start Scan</button>
         </div>
 
-        <div class="row-2">
+        <!-- ── Keyword Scan tab ── -->
+        <div class="tab-panel" id="tab-keyword">
+          <p style="font-size:0.82rem;color:var(--muted);margin-bottom:16px;line-height:1.6">
+            Scans the channel but only saves messages (and their media) that contain at least one of your keywords — in the original language <em>or</em> the English translation.
+          </p>
+
           <div class="form-group">
-            <label>Force Language</label>
-            <select id="f-lang">
-              <option value="">Auto-detect</option>
-              <option value="fa">🇮🇷 Farsi</option>
-              <option value="ru">🇷🇺 Russian</option>
-              <option value="zh-cn">🇨🇳 Chinese (Simplified)</option>
-              <option value="zh-tw">🇹🇼 Chinese (Traditional)</option>
-              <option value="ko">🇰🇵 Korean</option>
-              <option value="ar">🇸🇦 Arabic</option>
-              <option value="uk">🇺🇦 Ukrainian</option>
-              <option value="de">🇩🇪 German</option>
-              <option value="fr">🇫🇷 French</option>
-              <option value="es">🇪🇸 Spanish</option>
-            </select>
+            <label>Channel Username or Link</label>
+            <input id="kw-channel" type="text" placeholder="e.g. irna_1931 or t.me/channel" />
           </div>
+
           <div class="form-group">
-            <label>Max Video Size (MB)</label>
-            <input id="f-maxvideo" type="number" value="50" min="0" />
+            <label>Keywords</label>
+            <div class="keyword-tags" id="kw-tag-box" onclick="document.getElementById('kw-input').focus()">
+              <input id="kw-input" placeholder="Type a keyword and press Enter or comma…" autocomplete="off"
+                onkeydown="kwHandleKey(event)" />
+            </div>
+            <div class="kw-hint">Press <strong>Enter</strong> or <strong>,</strong> to add · Click × to remove · Matching is case-insensitive</div>
           </div>
+
+          <div class="row-2">
+            <div class="form-group">
+              <label>Message Limit</label>
+              <input id="kw-limit" type="number" value="0" min="0" placeholder="0 = all" />
+            </div>
+            <div class="form-group">
+              <label>Days Back (optional)</label>
+              <input id="kw-days" type="number" placeholder="all time" min="1" />
+            </div>
+          </div>
+
+          <div class="row-2">
+            <div class="form-group">
+              <label>Force Language</label>
+              <select id="kw-lang">
+                <option value="">Auto-detect</option>
+                <option value="fa">🇮🇷 Farsi</option>
+                <option value="ru">🇷🇺 Russian</option>
+                <option value="zh-cn">🇨🇳 Chinese (Simplified)</option>
+                <option value="zh-tw">🇹🇼 Chinese (Traditional)</option>
+                <option value="ko">🇰🇵 Korean</option>
+                <option value="ar">🇸🇦 Arabic</option>
+                <option value="uk">🇺🇦 Ukrainian</option>
+                <option value="de">🇩🇪 German</option>
+                <option value="fr">🇫🇷 French</option>
+                <option value="es">🇪🇸 Spanish</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Max Video Size (MB)</label>
+              <input id="kw-maxvideo" type="number" value="50" min="0" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Min Free Disk (GB)</label>
+            <input id="kw-diskspace" type="number" value="1.0" step="0.5" min="0.1" />
+          </div>
+
+          <div class="checkbox-row">
+            <input id="kw-skipen" type="checkbox" checked />
+            <label for="kw-skipen">Skip translation if already English</label>
+          </div>
+
+          <button class="btn btn-primary" id="btn-kw-start" onclick="startKeywordScan()" style="background: var(--accent2);">🔍 Start Keyword Scan</button>
         </div>
 
-        <div class="form-group">
-          <label>Min Free Disk (GB)</label>
-          <input id="f-diskspace" type="number" value="1.0" step="0.5" min="0.1" />
-        </div>
-
-        <div class="checkbox-row">
-          <input id="f-skipen" type="checkbox" />
-          <label for="f-skipen">Skip translation if already English</label>
-        </div>
-
-        <button class="btn btn-primary" id="btn-start" onclick="startScan()">▶ Start Scan</button>
       </div>
     </div>
 
@@ -371,7 +531,62 @@
   let _cmActiveJobId = null;
   let _cmPollTimer   = null;
   let _cmLogOffset   = 0;
+  let _kwKeywords    = [];
 
+  // ── Tab switching ──────────────────────────────
+  function switchTab(name) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('tab-btn-' + name).classList.add('active');
+    document.getElementById('tab-' + name).classList.add('active');
+  }
+
+  // ── Keyword tag widget ─────────────────────────
+  function kwHandleKey(e) {
+    const input = document.getElementById('kw-input');
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      kwAddTag(input.value);
+    } else if (e.key === 'Backspace' && input.value === '' && _kwKeywords.length) {
+      kwRemoveTag(_kwKeywords.length - 1);
+    }
+  }
+
+  function kwAddTag(raw) {
+    const val = raw.replace(/,/g, '').trim();
+    if (!val || _kwKeywords.includes(val)) {
+      document.getElementById('kw-input').value = '';
+      return;
+    }
+    _kwKeywords.push(val);
+    kwRenderTags();
+    document.getElementById('kw-input').value = '';
+  }
+
+  function kwRemoveTag(idx) {
+    _kwKeywords.splice(idx, 1);
+    kwRenderTags();
+  }
+
+  function kwRenderTags() {
+    const box = document.getElementById('kw-tag-box');
+    const input = document.getElementById('kw-input');
+    box.innerHTML = '';
+    _kwKeywords.forEach((kw, i) => {
+      const tag = document.createElement('span');
+      tag.className = 'keyword-tag';
+      tag.innerHTML = `${escHtml(kw)}<button onclick="kwRemoveTag(${i})" title="Remove">×</button>`;
+      box.appendChild(tag);
+    });
+    box.appendChild(input);
+    input.focus();
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // ── Init ───────────────────────────────────────
   async function cmInit() {
     try {
       const creds = await (await fetch('/api/credentials')).json();
@@ -387,11 +602,13 @@
         label.textContent = 'Credentials missing';
         banner.style.display = 'block';
         document.getElementById('btn-start').disabled = true;
+        document.getElementById('btn-kw-start').disabled = true;
       }
     } catch(e) {}
     cmLoadJobs();
   }
 
+  // ── Full scan ──────────────────────────────────
   async function startScan() {
     const channel = document.getElementById('f-channel').value.trim().replace(/^@/, '');
     if (!channel) { alert('Channel name is required'); return; }
@@ -404,7 +621,35 @@
       min_space_gb: parseFloat(document.getElementById('f-diskspace').value) || 1.0,
       skip_english: document.getElementById('f-skipen').checked,
     };
-    const btn = document.getElementById('btn-start');
+    await _submitScan(body, 'btn-start', '▶ Start Scan');
+  }
+
+  // ── Keyword scan ───────────────────────────────
+  async function startKeywordScan() {
+    const channel = document.getElementById('kw-channel').value.trim().replace(/^@/, '');
+    if (!channel) { alert('Channel name is required'); return; }
+
+    // Also allow pasting comma-separated into the input box without pressing Enter
+    const rawInput = document.getElementById('kw-input').value.trim();
+    if (rawInput) kwAddTag(rawInput);
+
+    if (!_kwKeywords.length) { alert('Add at least one keyword'); return; }
+
+    const body = {
+      channel,
+      limit:        parseInt(document.getElementById('kw-limit').value) || 0,
+      days:         document.getElementById('kw-days').value ? parseInt(document.getElementById('kw-days').value) : null,
+      lang:         document.getElementById('kw-lang').value || null,
+      max_video_mb: parseInt(document.getElementById('kw-maxvideo').value) || 50,
+      min_space_gb: parseFloat(document.getElementById('kw-diskspace').value) || 1.0,
+      skip_english: document.getElementById('kw-skipen').checked,
+      keywords:     _kwKeywords.join(','),
+    };
+    await _submitScan(body, 'btn-kw-start', '🔍 Start Keyword Scan');
+  }
+
+  async function _submitScan(body, btnId, btnLabel) {
+    const btn = document.getElementById(btnId);
     btn.disabled = true;
     btn.textContent = '⏳ Starting…';
     try {
@@ -417,13 +662,14 @@
       document.getElementById('cmDownloadBtn').style.display = 'none';
       document.getElementById('cmStatusBadge').textContent = 'Running';
       document.getElementById('cmStatusBadge').className = 'badge badge-running';
+      document.getElementById('cmStatusBadge').style.display = 'inline-block';
       cmPollLog();
       cmLoadJobs();
     } catch(e) {
       alert('Network error: ' + e.message);
     } finally {
       btn.disabled = false;
-      btn.textContent = '▶ Start Scan';
+      btn.textContent = btnLabel;
     }
   }
 
@@ -464,6 +710,7 @@
       badge.textContent = '✗ Error';
       badge.className = 'badge badge-error';
     }
+    badge.style.display = 'inline-block';
     dlBtn.style.display = 'inline-block';
   }
 
@@ -489,6 +736,9 @@
           : j.status === 'running'
           ? '<span class="badge badge-running">⏳ Running</span>'
           : '<span class="badge badge-error">✗ Error</span>';
+        const kwBadges = j.keywords && j.keywords.length
+          ? j.keywords.map(k => `<span class="kw-badge">🔍 ${escHtml(k)}</span>`).join(' ')
+          : '';
         const dlBtn  = (j.status === 'completed' || j.status === 'error')
           ? `<a href="/api/jobs/${j.id}/download" class="btn btn-success" style="font-size:0.75rem;padding:5px 10px">⬇ ZIP</a>`
           : '';
@@ -502,6 +752,7 @@
               <span class="job-channel">@${j.channel}</span>
               ${badge}
             </div>
+            ${kwBadges ? `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">${kwBadges}</div>` : ''}
             <div class="job-meta-row">
               <span>🕐 ${startTime}</span>
               <span>⏱ ${duration}</span>
@@ -540,7 +791,7 @@
       if (_cmPollTimer) { clearInterval(_cmPollTimer); _cmPollTimer = null; }
       document.getElementById('cmLogBox').innerHTML = '<div class="log-placeholder">Select a job to view its log</div>';
       document.getElementById('cmDownloadBtn').style.display = 'none';
-      document.getElementById('cmStatusBadge').textContent = '';
+      document.getElementById('cmStatusBadge').style.display = 'none';
     }
     cmLoadJobs();
   }

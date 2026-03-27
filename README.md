@@ -17,6 +17,7 @@ Built by [@osintph](https://github.com/osintph)
 - ⚡ Multiple concurrent scan jobs
 - 🗂️ Full job history — persists across restarts
 - 🔁 Runs as a background systemd service
+- 🔍 Keyword scan mode — only saves messages (and their media) that match your keywords
 
 ---
 
@@ -125,6 +126,12 @@ All settings live in `.env`:
 
 ## 📖 Usage
 
+The UI has two scan modes, selectable via the tab bar on the left panel.
+
+### 📡 Full Scan
+
+Downloads all messages from a channel (up to your configured limit), translates them, and saves everything.
+
 1. Enter a channel username (e.g. `farsna`) or full link (e.g. `t.me/farsna`)
 2. Configure scan options:
    - **Message Limit** — number of messages to fetch (0 = all)
@@ -137,13 +144,32 @@ All settings live in `.env`:
 4. Watch the live log in real time
 5. Click **⬇ ZIP** to download results when complete
 
+### 🔍 Keyword Scan
+
+Scans the full channel history but only saves messages — and their attached media — that contain at least one of your keywords. Non-matching messages are counted in the log but never written to disk, so the output ZIP contains only relevant content.
+
+Keyword matching checks both the **original text** and the **English translation**, so you can search a Farsi or Russian channel using English keywords and still get matches.
+
+1. Enter a channel username or link
+2. Type keywords into the tag box and press **Enter** or **,** after each one — click **×** to remove
+3. Configure the same options as Full Scan (limit 0 = scan the entire channel history)
+4. Click **🔍 Start Keyword Scan**
+5. The live log shows a summary at the end:
+   ```
+   [i] Keyword filter: 1,243 messages skipped (did not match: missile, strike)
+   [✓] 17 messages saved
+   ```
+6. Click **⬇ ZIP** to download — the ZIP contains only the matching messages and their media
+
+Completed keyword scan jobs show their keyword tags in the job history panel so you can tell them apart at a glance.
+
 ### What's in the ZIP
 
 | File | Description |
 |---|---|
 | `messages.html` | Self-contained report — original text, English translation, inline photos/videos |
 | `messages.json` | Raw data with all fields |
-| `media/` | Downloaded photos and videos |
+| `media/` | Downloaded photos and videos (keyword scan: only media from matching messages) |
 
 ---
 
