@@ -307,6 +307,68 @@
     }
     .kw-hint { font-size: 0.75rem; color: var(--muted); margin-top: 5px; }
 
+    /* ── Search results ─────────────────────────── */
+    .sr-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 16px;
+      margin-bottom: 10px;
+      transition: border-color 0.2s;
+    }
+    .sr-card:hover { border-color: var(--accent); }
+    .sr-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 6px;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .sr-channel { color: var(--accent); font-weight: 600; font-size: 0.88rem; }
+    .sr-excerpt {
+      font-size: 0.88rem;
+      line-height: 1.7;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    .sr-excerpt mark {
+      background: #2a3a1a;
+      color: #a5d6a7;
+      border-radius: 2px;
+      padding: 0 2px;
+    }
+    .sr-expand {
+      font-size: 0.75rem;
+      color: var(--accent);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+    }
+    .sr-expand:hover { text-decoration: underline; }
+    .sr-full {
+      display: none;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+    .sr-full.open { display: block; }
+    .sr-original {
+      font-size: 0.82rem;
+      color: #ffcc80;
+      border-left: 3px solid #ff8f00;
+      padding-left: 10px;
+      margin-bottom: 8px;
+      line-height: 1.7;
+    }
+    .sr-translated {
+      font-size: 0.85rem;
+      color: #a5d6a7;
+      line-height: 1.7;
+    }
+
     /* ── Keyword badge on job cards ─────────────── */
     .kw-badge {
       display: inline-block;
@@ -372,6 +434,7 @@
         <div class="tab-bar">
           <button class="tab-btn active" id="tab-btn-full" onclick="switchTab('full')">📡 Full Scan</button>
           <button class="tab-btn" id="tab-btn-keyword" onclick="switchTab('keyword')">🔍 Keyword Scan</button>
+          <button class="tab-btn" id="tab-btn-search" onclick="switchTab('search')">🗂 Search Archive</button>
         </div>
 
         <!-- ── Full Scan tab ── -->
@@ -495,6 +558,32 @@
           <button class="btn btn-primary" id="btn-kw-start" onclick="startKeywordScan()" style="background: var(--accent2);">🔍 Start Keyword Scan</button>
         </div>
 
+        <!-- ── Search Archive tab ── -->
+        <div class="tab-panel" id="tab-search">
+          <p style="font-size:0.82rem;color:var(--muted);margin-bottom:16px;line-height:1.6">
+            Search across all completed scan archives. Matches against both original text and English translations. All terms must match (AND search).
+          </p>
+
+          <div class="form-group" style="display:flex;gap:8px;align-items:flex-end">
+            <div style="flex:1">
+              <label>Search query</label>
+              <input id="sr-query" type="text" placeholder="e.g. missile strike  or  nuclear facility"
+                onkeydown="if(event.key==='Enter') runSearch()" />
+            </div>
+            <button class="btn btn-primary" onclick="runSearch()" style="width:auto;white-space:nowrap">Search</button>
+          </div>
+
+          <div class="form-group">
+            <label>Filter by channel (optional)</label>
+            <select id="sr-channel">
+              <option value="">All channels</option>
+            </select>
+          </div>
+
+          <div id="sr-status" style="font-size:0.78rem;color:var(--muted);margin-bottom:10px;min-height:18px"></div>
+          <div id="sr-results"></div>
+        </div>
+
       </div>
     </div>
 
@@ -533,12 +622,104 @@
   let _cmLogOffset   = 0;
   let _kwKeywords    = [];
 
-  // ── Tab switching ──────────────────────────────
+  // ── Search archive ─────────────────────────────
   function switchTab(name) {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     document.getElementById('tab-btn-' + name).classList.add('active');
     document.getElementById('tab-' + name).classList.add('active');
+    if (name === 'search') populateChannelFilter();
+  }
+
+  async function populateChannelFilter() {
+    try {
+      const jobs = await (await fetch('/api/jobs')).json();
+      const sel = document.getElementById('sr-channel');
+      const current = sel.value;
+      const channels = [...new Set(
+        jobs.filter(j => j.status === 'completed').map(j => j.channel)
+      )].sort();
+      sel.innerHTML = '<option value="">All channels</option>' +
+        channels.map(c => `<option value="${escHtml(c)}" ${c===current?'selected':''}>${escHtml(c)}</option>`).join('');
+    } catch(e) {}
+  }
+
+  async function runSearch() {
+    const q = document.getElementById('sr-query').value.trim();
+    if (!q) return;
+    const channel = document.getElementById('sr-channel').value;
+    const status = document.getElementById('sr-status');
+    const resultsEl = document.getElementById('sr-results');
+
+    status.textContent = 'Searching…';
+    resultsEl.innerHTML = '';
+
+    try {
+      // Find job_id if a specific channel is selected (use most recent completed job for that channel)
+      let url = `/api/search?q=${encodeURIComponent(q)}`;
+      const res  = await fetch(url);
+      const data = await res.json();
+      if (!res.ok) { status.textContent = data.error || 'Search failed'; return; }
+
+      // Client-side filter by channel if selected
+      let results = data.results;
+      if (channel) results = results.filter(r => r.channel === channel);
+
+      status.textContent = results.length
+        ? `${results.length} result${results.length !== 1 ? 's' : ''} for "${escHtml(q)}"`
+        : `No results for "${escHtml(q)}"`;
+
+      const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+
+      resultsEl.innerHTML = results.map((r, i) => {
+        const mediaBadge = r.media_type
+          ? `<span style="background:#1a2a3a;color:#90caf9;border-radius:4px;padding:1px 6px;font-size:0.7rem">${escHtml(r.media_type)}</span>`
+          : '';
+        const viewsBadge = r.views ? `👁 ${r.views}` : '';
+        const langBadge  = r.lang && r.lang !== 'unknown'
+          ? `<span style="background:#0d2137;color:#81d4fa;border-radius:10px;padding:1px 7px;font-size:0.7rem;border:1px solid #1a4a6e">${escHtml(r.lang)}</span>`
+          : '';
+        const scanInfo = `${escHtml(r.channel)} · ${escHtml(r.scan_date)}`;
+
+        return `<div class="sr-card">
+          <div class="sr-meta">
+            <span class="sr-channel">@${escHtml(r.channel)}</span>
+            ${langBadge} ${mediaBadge}
+            <span>#${r.msg_id}</span>
+            <span>${escHtml(r.date.replace(' UTC',''))}</span>
+            <span>${viewsBadge}</span>
+          </div>
+          <div class="sr-excerpt">${highlightTerms(escHtml(r.excerpt), terms)}</div>
+          <button class="sr-expand" onclick="toggleFull(${i})">▶ Show full message</button>
+          <div class="sr-full" id="sr-full-${i}">
+            ${r.original && r.original !== r.translated ? `<div class="sr-original">${escHtml(r.original)}</div>` : ''}
+            <div class="sr-translated">${highlightTerms(escHtml(r.translated || r.original), terms)}</div>
+            <div style="margin-top:8px;display:flex;gap:8px">
+              <a href="/api/jobs/${r.job_id}/download" class="btn btn-success" style="font-size:0.72rem;padding:4px 10px">⬇ ZIP</a>
+              <button class="btn btn-ghost" style="font-size:0.72rem;padding:4px 10px" onclick="cmViewJob('${r.job_id}')">📋 Job log</button>
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+    } catch(e) {
+      status.textContent = 'Search error: ' + e.message;
+    }
+  }
+
+  function toggleFull(i) {
+    const el  = document.getElementById('sr-full-' + i);
+    const btn = el.previousElementSibling;
+    const open = el.classList.toggle('open');
+    btn.textContent = open ? '▼ Hide full message' : '▶ Show full message';
+  }
+
+  function highlightTerms(text, terms) {
+    let out = text;
+    terms.forEach(t => {
+      const re = new RegExp('(' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+      out = out.replace(re, '<mark>$1</mark>');
+    });
+    return out;
   }
 
   // ── Keyword tag widget ─────────────────────────

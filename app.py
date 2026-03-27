@@ -605,6 +605,83 @@ def api_job_delete(job_id):
     return jsonify({"ok": True})
 
 
+@app.route("/api/search", methods=["GET"])
+def api_search():
+    q = (request.args.get("q") or "").strip().lower()
+    job_filter = (request.args.get("job_id") or "").strip()  # optional: limit to one job
+    if not q:
+        return jsonify({"error": "q is required"}), 400
+
+    terms = [t.strip() for t in q.split() if t.strip()]  # all terms must match (AND)
+    results = []
+
+    with _jobs_lock:
+        jobs_snapshot = list(_jobs.items())
+
+    for jid, j in jobs_snapshot:
+        if j["status"] != "completed":
+            continue
+        if job_filter and jid != job_filter:
+            continue
+
+        output_dir = Path(j["output_dir"])
+        channel_name = j["config"].get("channel", "")
+        keywords = j["config"].get("keywords") or []
+        scan_date = j.get("ended_at", j.get("started_at", ""))[:10]
+
+        # messages.json lives inside a per-channel subdir
+        for json_path in output_dir.rglob("messages.json"):
+            try:
+                with open(json_path, encoding="utf-8") as f:
+                    messages = json.load(f)
+            except Exception:
+                continue
+
+            for msg in messages:
+                original   = (msg.get("original")      or "").lower()
+                translated = (msg.get("translated_en") or "").lower()
+                haystack   = original + " " + translated
+
+                if not all(t in haystack for t in terms):
+                    continue
+
+                # Build a short excerpt around the first match in translated text
+                def excerpt(text, term, window=120):
+                    idx = text.lower().find(term)
+                    if idx == -1:
+                        return text[:window].strip()
+                    start = max(0, idx - window // 2)
+                    end   = min(len(text), idx + window // 2)
+                    snip  = text[start:end].strip()
+                    if start > 0:
+                        snip = "…" + snip
+                    if end < len(text):
+                        snip = snip + "…"
+                    return snip
+
+                display_text = msg.get("translated_en") or msg.get("original") or ""
+                snip = excerpt(display_text, terms[0])
+
+                results.append({
+                    "job_id":       jid,
+                    "channel":      channel_name,
+                    "scan_date":    scan_date,
+                    "keywords":     keywords,
+                    "msg_id":       msg.get("id"),
+                    "date":         msg.get("date", ""),
+                    "lang":         msg.get("detected_lang", ""),
+                    "media_type":   msg.get("media_type"),
+                    "views":        msg.get("views"),
+                    "excerpt":      snip,
+                    "original":     msg.get("original", ""),
+                    "translated":   msg.get("translated_en", ""),
+                })
+
+    # Sort newest message first
+    results.sort(key=lambda x: x["date"], reverse=True)
+    return jsonify({"q": q, "total": len(results), "results": results})
+
+
 @app.route("/api/start", methods=["POST"])
 def api_start():
     body = request.get_json() or {}

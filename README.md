@@ -18,6 +18,7 @@ Built by [@osintph](https://github.com/osintph)
 - 🗂️ Full job history — persists across restarts
 - 🔁 Runs as a background systemd service
 - 🔍 Keyword scan mode — only saves messages (and their media) that match your keywords
+- 🗂️ In-app archive search — full-text search across all completed scans, original and translated
 
 ---
 
@@ -126,7 +127,7 @@ All settings live in `.env`:
 
 ## 📖 Usage
 
-The UI has two scan modes, selectable via the tab bar on the left panel.
+The UI has three modes, selectable via the tab bar on the left panel.
 
 ### 📡 Full Scan
 
@@ -162,6 +163,16 @@ Keyword matching checks both the **original text** and the **English translation
 6. Click **⬇ ZIP** to download — the ZIP contains only the matching messages and their media
 
 Completed keyword scan jobs show their keyword tags in the job history panel so you can tell them apart at a glance.
+
+### 🗂 Search Archive
+
+Searches across all completed scan archives without opening any ZIP files. Matches against both the original text and the English translation, so you can query foreign-language archives in English.
+
+- Search is **AND logic** — all terms must appear in the message (`missile strike` only matches messages containing both words)
+- Use the channel dropdown to narrow results to a specific channel
+- Each result shows a highlighted excerpt, language, media type, and view count
+- Click **Show full message** to expand the original text and full translation inline
+- Direct links to download the job ZIP or view the job log are shown per result
 
 ### What's in the ZIP
 
